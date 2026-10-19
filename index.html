@@ -1,0 +1,507 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Ship or Skip: a Bayesian launch room</title>
+<meta name="description" content="A director-level PM prototype: deciding whether to ship an AI answer-ranking change using Bayesian A/B testing and Monte Carlo. Built by Shriya Shekatkar.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Archivo:wght@400;500;600;700&family=Fraunces:ital,opsz,wght@1,9..144,500;1,9..144,700&family=JetBrains+Mono:wght@400;600;700&display=swap">
+<style>
+/*
+  Design baseline: 4 pins from the feed, redrawn (no images copied).
+  PIN 1 hot-magenta affirmation poster -> hero (flat magenta, heavy black grotesk, ragged-justified lines)
+  PIN 2 cobalt enamel button w/ red heart -> KPI badges (cobalt ring text, glossy enamel, red heart core)
+  PIN 3 metallic chrome-pink sneaker w/ cream scalloped trim -> buttons, cards, dividers
+  PIN 4 "FOCUS" dark terminal collage -> simulation war room (night, terminal green, grid, city glow)
+*/
+:root{
+  --ink:#141216; --cream:#FFF6EA; --paper:#FFFBF5;
+  --magenta:#E2127A; --magenta-deep:#B80C62;
+  --cobalt:#1F4FD8; --cobalt-deep:#123596; --heart:#EE2B2B;
+  --chrome-1:#FCE3EE; --chrome-2:#F6B8D0; --chrome-3:#E58DB2; --chrome-hi:#FFFFFF;
+  --night:#0B0916; --night-2:#141127; --grid:rgba(124,247,200,.08); --terminal:#7CF7C8; --terminal-dim:#3FAE8A; --amber:#FFB547;
+  --muted:#5D5560;
+  --f-display:"Archivo Black","Arial Black",Impact,sans-serif;
+  --f-body:"Archivo",system-ui,-apple-system,sans-serif;
+  --f-serif:"Fraunces",Georgia,serif;
+  --f-mono:"JetBrains Mono",ui-monospace,Menlo,monospace;
+  --grain:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 .55 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+  --scallop:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='28' height='14'><path d='M0 0 Q7 14 14 0 Q21 14 28 0 V14 H0Z' fill='%23FFF6EA'/></svg>");
+}
+*{box-sizing:border-box}
+html{background:var(--cream)}
+body{margin:0;color:var(--ink);font-family:var(--f-body);font-size:17px;line-height:1.6;background:var(--cream);
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+body::after{content:"";position:fixed;inset:0;pointer-events:none;background-image:var(--grain);opacity:.12;mix-blend-mode:multiply;z-index:100}
+.wrap{max-width:1180px;margin:0 auto;padding-block:20px 64px;display:flex;flex-direction:column;gap:56px}
+h1,h2,h3{margin:0;line-height:1.05;text-wrap:balance}
+p{margin:0}
+.mono{font-family:var(--f-mono)}
+.serif{font-family:var(--f-serif);font-style:italic}
+:focus-visible{outline:3px solid var(--cobalt);outline-offset:3px}
+button,input,select{font:inherit}
+
+/* ---------- PIN 1: magenta affirmation poster ---------- */
+.poster{position:relative;background:var(--magenta);color:var(--ink);border-radius:6px;padding:clamp(22px,5vw,56px);overflow:hidden;
+  box-shadow:0 30px 60px -30px rgba(184,12,98,.7)}
+.poster::before{content:"";position:absolute;inset:0;background-image:var(--grain);opacity:.35;mix-blend-mode:multiply;pointer-events:none}
+.poster .tag{font-family:var(--f-mono);font-size:12px;letter-spacing:.14em;text-transform:uppercase;font-weight:700;display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;position:relative}
+.affirm{font-family:var(--f-display);font-size:clamp(46px,9.6vw,128px);line-height:.98;letter-spacing:-.01em;margin-top:22px;position:relative}
+.affirm span{display:flex;justify-content:space-between;gap:.25em}
+.affirm span em{font-style:normal}
+.poster .sub{position:relative;margin-top:28px;display:grid;grid-template-columns:1.3fr 1fr;gap:28px;align-items:end}
+.poster .sub p{font-size:19px;font-weight:600;max-width:52ch}
+.poster .sub .who{font-family:var(--f-mono);font-size:13px;text-align:right}
+
+/* ---------- PIN 3: chrome pink + cream scallops ---------- */
+.chrome{background:linear-gradient(160deg,var(--chrome-1) 0%,var(--chrome-2) 38%,var(--chrome-hi) 52%,var(--chrome-2) 64%,var(--chrome-3) 100%);}
+.btn{border:0;cursor:pointer;border-radius:999px;padding:12px 20px;font-weight:700;font-size:15px;color:var(--ink);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.9),inset 0 -2px 0 rgba(160,40,90,.25),0 6px 16px -8px rgba(160,40,90,.6);
+  outline:3px solid var(--cream);outline-offset:-6px;transition:transform .15s}
+.btn:hover{transform:translateY(-2px)} .btn:active{transform:translateY(0)}
+.btn.dark{background:var(--ink);color:var(--cream);outline-color:rgba(255,246,234,.25);box-shadow:none}
+.scallop{height:14px;background:var(--scallop) 0 0/28px 14px repeat-x}
+.scallop.flip{transform:scaleY(-1)}
+.card{position:relative;border-radius:22px;padding:22px 22px 24px;display:flex;flex-direction:column;gap:12px}
+.card.cream{background:var(--paper);box-shadow:0 0 0 2px var(--ink)}
+.card.pinkc{box-shadow:0 0 0 2px var(--ink)}
+.card h3{font-family:var(--f-display);font-size:24px;font-weight:400}
+.kicker{font-family:var(--f-mono);font-size:12px;letter-spacing:.12em;text-transform:uppercase;font-weight:700;color:var(--muted)}
+
+/* ---------- section heads ---------- */
+.sec{display:flex;flex-direction:column;gap:22px}
+.sec-head{display:grid;grid-template-columns:auto 1fr;gap:18px;align-items:end}
+.sec-head .num{font-family:var(--f-display);font-size:64px;line-height:.8;color:var(--magenta)}
+.sec-head h2{font-family:var(--f-display);font-weight:400;font-size:clamp(28px,4.4vw,46px)}
+.sec-head p{grid-column:2;color:var(--muted);max-width:68ch}
+.grid3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px}
+.grid2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px}
+ul.tight{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:6px}
+
+/* ---------- PIN 4: FOCUS war room ---------- */
+.war{position:relative;background:var(--night);color:#E9E6F5;border-radius:28px;padding:clamp(16px,3vw,28px);overflow:hidden;
+  background-image:linear-gradient(var(--grid) 1px,transparent 1px),linear-gradient(90deg,var(--grid) 1px,transparent 1px),
+    radial-gradient(120% 70% at 85% 110%,rgba(226,18,122,.35),transparent 60%),radial-gradient(90% 60% at 0% 0%,rgba(31,79,216,.35),transparent 60%);
+  background-size:28px 28px,28px 28px,auto,auto;box-shadow:0 30px 70px -30px rgba(11,9,22,.9)}
+.war::after{content:"";position:absolute;inset:0;pointer-events:none;background:repeating-linear-gradient(0deg,rgba(255,255,255,.03) 0 1px,transparent 1px 3px)}
+.war>*{position:relative;z-index:1}
+.war-top{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.focus{font-family:var(--f-serif);font-weight:700;font-style:normal;font-size:clamp(30px,5vw,48px);letter-spacing:.02em;
+  background:#F2EDE4;color:var(--ink);padding:2px 16px 6px;border-radius:4px;display:inline-block;transform:rotate(-1.2deg)}
+.focus small{display:block;font-family:var(--f-mono);font-size:11px;letter-spacing:.06em;color:var(--muted);text-align:center;margin-top:-4px}
+.term{font-family:var(--f-mono);font-size:12.5px;color:var(--terminal);line-height:1.5;min-height:3.2em}
+.term .dim{color:var(--terminal-dim)}
+.war-grid{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);gap:18px;margin-top:16px}
+.panel{background:rgba(20,17,39,.82);border:1px solid rgba(124,247,200,.18);border-radius:18px;padding:14px;display:flex;flex-direction:column;gap:10px;min-width:0}
+.panel .lbl{font-family:var(--f-mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--terminal-dim)}
+canvas{display:block;width:100%;border-radius:12px}
+#lanes{height:250px;background:#07060F}
+#post{height:230px;background:#07060F}
+#lift{height:170px;background:#07060F}
+.ctl{display:grid;grid-template-columns:1fr auto;gap:2px 10px;align-items:center;font-size:14px}
+.ctl label{font-weight:600;color:#E9E6F5}
+.ctl output{font-family:var(--f-mono);color:var(--terminal);font-size:13px}
+.ctl input[type=range]{grid-column:1/-1;width:100%;accent-color:var(--magenta)}
+.ctl select{grid-column:1/-1;background:#07060F;color:#E9E6F5;border:1px solid rgba(124,247,200,.3);border-radius:10px;padding:8px}
+.btnrow{display:flex;gap:10px;flex-wrap:wrap}
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:#B9B3CC}
+.legend i{display:inline-block;width:14px;height:4px;border-radius:2px;vertical-align:middle;margin-right:6px}
+
+/* ---------- PIN 2: cobalt enamel heart badges ---------- */
+.badges{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px;max-width:420px;width:100%;margin-inline:auto}
+.badge{position:relative;aspect-ratio:1;border-radius:50%;display:grid;place-items:center;text-align:center;
+  background:radial-gradient(circle at 34% 28%,#6E93FF 0 8%,var(--cobalt) 30%,var(--cobalt-deep) 74%,#0B1F5E 100%);
+  box-shadow:inset 0 -6px 14px rgba(0,0,0,.35),inset 0 4px 10px rgba(255,255,255,.25),0 0 0 4px #C9CED8,0 0 0 6px #8B92A0,0 14px 24px -12px rgba(0,0,0,.6)}
+.badge svg.ring{position:absolute;inset:0;width:100%;height:100%}
+.badge svg.ring text{font-family:var(--f-display);font-size:11.5px;letter-spacing:2.2px;fill:#F2F4FF}
+.badge .core{width:56%;aspect-ratio:1;display:grid;place-items:center;position:relative}
+.badge .core svg{position:absolute;inset:0;width:100%;height:100%;filter:drop-shadow(0 3px 2px rgba(0,0,0,.35))}
+.badge .core b{position:relative;font-family:var(--f-mono);font-weight:700;color:#fff;font-size:clamp(13px,2.1vw,19px);font-variant-numeric:tabular-nums;text-shadow:0 1px 0 rgba(0,0,0,.35)}
+.badge.spin{animation:spin .7s cubic-bezier(.2,.9,.3,1.2)}
+@keyframes spin{from{transform:rotateY(0)}to{transform:rotateY(360deg)}}
+.badge.off{filter:saturate(.25) brightness(.85)}
+
+/* verdict */
+.verdict{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;border-radius:18px;padding:14px 18px;
+  font-family:var(--f-display);font-size:clamp(22px,3vw,30px);color:var(--ink);background:var(--amber)}
+.verdict.ship{background:var(--terminal)} .verdict.skip{background:#FF7A7A}
+.verdict small{font-family:var(--f-mono);font-size:12px;font-weight:600;max-width:52ch}
+
+/* memo */
+.memo{background:var(--paper);border-radius:22px;box-shadow:0 0 0 2px var(--ink),8px 8px 0 var(--magenta);padding:clamp(18px,3vw,30px);display:flex;flex-direction:column;gap:16px}
+.memo-head{display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap;border-bottom:2px dashed var(--ink);padding-bottom:12px}
+.memo-head h3{font-family:var(--f-display);font-weight:400;font-size:28px}
+.memo dl{display:grid;grid-template-columns:150px 1fr;gap:10px 18px;margin:0}
+.memo dt{font-family:var(--f-mono);font-size:12px;letter-spacing:.1em;text-transform:uppercase;font-weight:700;color:var(--magenta-deep);padding-top:3px}
+.memo dd{margin:0}
+pre{margin:0;background:var(--night);color:#E9E6F5;border-radius:16px;padding:16px;overflow-x:auto;font-family:var(--f-mono);font-size:13px;line-height:1.6}
+pre .c{color:#8C86A3} pre .k{color:var(--terminal)} pre .s{color:var(--amber)}
+table.t{width:100%;border-collapse:collapse;font-size:15px}
+table.t th,table.t td{text-align:left;padding:9px 10px;border-top:1.5px solid rgba(20,18,22,.15);vertical-align:top}
+table.t th{font-family:var(--f-mono);font-size:11.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+.foot{display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;font-size:13.5px;color:var(--muted);border-top:2px solid var(--ink);padding-top:16px}
+
+/* entrance */
+.peel{animation:peel .8s cubic-bezier(.2,.9,.3,1.1) both}
+@keyframes peel{from{opacity:0;transform:translateY(18px) rotate(-1.5deg)}to{opacity:1;transform:none}}
+
+@media (max-width:900px){.war-grid,.grid3,.grid2,.poster .sub{grid-template-columns:1fr}.poster .sub .who{text-align:left}.memo dl{grid-template-columns:1fr}}
+@media (prefers-reduced-motion:reduce){.peel,.badge.spin{animation:none}.btn{transition:none}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<!-- ================= HERO (PIN 1) ================= -->
+<header class="poster peel">
+  <div class="tag"><span>APM Lab · Project 01 · Bayesian launch decisions</span><span>Monte Carlo × Product</span></div>
+  <h1 class="affirm" aria-label="Ship the bet, not the guess.">
+    <span><em>ship</em><em>the</em></span>
+    <span><em>bet,</em><em>not</em></span>
+    <span><em>the</em><em>guess.</em></span>
+  </h1>
+  <div class="sub">
+    <p>A launch room for an AI analytics assistant. The team changed how it ranks candidate answers. Do we ship it to every workspace? This page makes that call the way a product director would: with probabilities, expected loss, guardrails and a rollout plan.</p>
+    <p class="who">Shriya Shekatkar<br>UCLA · Stats 102C Monte Carlo Methods</p>
+  </div>
+</header>
+
+<!-- ================= 1. THE DECISION ================= -->
+<section class="sec" aria-labelledby="s1">
+  <div class="sec-head"><span class="num">01</span><h2 id="s1">The decision on the table</h2>
+    <p>Framed the way it would land in a product review: who it's for, what success means, and what we refuse to break.</p></div>
+  <div class="grid3">
+    <article class="card chrome pinkc peel" style="animation-delay:.05s">
+      <span class="kicker">Customer problem</span>
+      <h3>Wrong first answer, lost trust</h3>
+      <p>Business users ask questions in plain English and expect the first answer to be right. When the top-ranked answer misses, they stop asking and go back to filing tickets with the data team.</p>
+    </article>
+    <article class="card cream peel" style="animation-delay:.12s">
+      <span class="kicker">The change (variant B)</span>
+      <h3>Re-rank with table usage signals</h3>
+      <p>Candidate answers get boosted when they use tables that are certified, frequently queried and recently refreshed. Control (A) ranks by model confidence alone.</p>
+    </article>
+    <article class="card chrome pinkc peel" style="animation-delay:.19s">
+      <span class="kicker">Success metric</span>
+      <h3>Answer acceptance rate</h3>
+      <p>Share of questions where the user accepts the first answer: they click thumbs-up, save it to a dashboard, or don't rephrase within 60 seconds.</p>
+    </article>
+  </div>
+  <div class="card cream">
+    <span class="kicker">Guardrails: we don't ship if any of these regress</span>
+    <table class="t">
+      <thead><tr><th>Guardrail</th><th>Why it matters</th><th>Threshold</th></tr></thead>
+      <tbody>
+        <tr><td>p95 answer latency</td><td>Re-ranking adds a metadata lookup; slow answers feel broken.</td><td>≤ +150 ms</td></tr>
+        <tr><td>Cost per answer</td><td>Extra compute per question multiplies across every workspace.</td><td>≤ +5%</td></tr>
+        <tr><td>Answers touching restricted tables</td><td>Ranking must never surface data a user can't access. Zero tolerance.</td><td>0</td></tr>
+        <tr><td>Rephrase rate</td><td>A proxy for confusion. It should fall, not rise.</td><td>no increase</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<div class="scallop" role="presentation"></div>
+
+<!-- ================= 2. WAR ROOM (PIN 4 + PIN 2) ================= -->
+<section class="sec" aria-labelledby="s2">
+  <div class="sec-head"><span class="num">02</span><h2 id="s2">The launch room</h2>
+    <p>Synthetic traffic flows into both arms. Every question updates our beliefs about each arm's true acceptance rate, and Monte Carlo turns those beliefs into the two numbers a director actually needs: the chance B is better, and how much we'd lose if we're wrong.</p></div>
+
+  <div class="war">
+    <div class="war-top">
+      <span class="focus">FOCUS.<small>decide with evidence</small></span>
+      <div class="term" id="term" aria-live="polite"><span class="dim">$</span> launch-room --arms A,B --metric acceptance</div>
+    </div>
+
+    <div class="war-grid">
+      <div style="display:flex;flex-direction:column;gap:14px;min-width:0">
+        <div class="panel">
+          <span class="lbl">Live traffic · each dot is one question</span>
+          <canvas id="lanes" aria-label="Questions flowing into control and variant lanes, accepted answers glow"></canvas>
+          <div class="legend"><span><i style="background:var(--magenta)"></i>accepted</span><span><i style="background:#4A4560"></i>not accepted</span></div>
+        </div>
+        <div class="panel">
+          <span class="lbl">Belief about each arm's true acceptance rate (posterior)</span>
+          <canvas id="post" aria-label="Posterior Beta distributions for A and B"></canvas>
+          <div class="legend"><span><i style="background:#9AA3B8"></i>A · control</span><span><i style="background:var(--magenta)"></i>B · re-ranked</span><span><i style="background:var(--amber)"></i>prior</span></div>
+        </div>
+        <div class="panel">
+          <span class="lbl">Monte Carlo · 20,000 draws of the lift (B − A)</span>
+          <canvas id="lift" aria-label="Histogram of simulated lift, area right of zero shaded"></canvas>
+        </div>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:14px;min-width:0">
+        <div class="panel">
+          <span class="lbl">Scenario</span>
+          <div class="ctl"><label for="scen">What's really true (hidden from the team)</label>
+            <select id="scen">
+              <option value="win">B is genuinely better (+3 pts)</option>
+              <option value="tiny">B is barely better (+0.5 pts)</option>
+              <option value="flat">No real difference</option>
+              <option value="lose">B is worse (−2 pts)</option>
+            </select></div>
+          <div class="ctl"><label for="prior">Prior belief</label>
+            <select id="prior">
+              <option value="hist">Informed: past ranking launches (~42%)</option>
+              <option value="flat">Flat: no opinion</option>
+              <option value="skeptic">Skeptical: most ranking tweaks do nothing</option>
+            </select></div>
+          <div class="ctl"><label for="vol">Questions per day per arm</label><output id="volo"></output>
+            <input id="vol" type="range" min="200" max="5000" step="100" value="1200"></div>
+          <div class="ctl"><label for="loss">Max acceptable expected loss</label><output id="losso"></output>
+            <input id="loss" type="range" min="0.05" max="1" step="0.05" value="0.2"></div>
+          <div class="btnrow">
+            <button class="btn chrome" id="day" type="button">Run 1 day</button>
+            <button class="btn chrome" id="week" type="button">Run 7 days</button>
+            <button class="btn dark" id="reset" type="button">Reset</button>
+          </div>
+        </div>
+
+        <div class="badges" id="badges">
+          <div class="badge" id="bP"><svg class="ring" viewBox="0 0 100 100" aria-hidden="true"><defs><path id="r1" d="M50,50 m-38,0 a38,38 0 1,1 76,0 a38,38 0 1,1 -76,0"/></defs><text><textPath href="#r1" startOffset="0">P(B BEATS A) · P(B BEATS A) ·</textPath></text></svg><div class="core"><svg viewBox="0 0 100 100" aria-hidden="true"><path d="M50 88 C20 66 6 48 6 30 C6 16 17 6 30 6 C39 6 46 11 50 18 C54 11 61 6 70 6 C83 6 94 16 94 30 C94 48 80 66 50 88Z" fill="#EE2B2B"/><path d="M24 18 C18 20 14 26 14 32" stroke="rgba(255,255,255,.55)" stroke-width="5" fill="none" stroke-linecap="round"/></svg><b id="vP">–</b></div></div>
+          <div class="badge" id="bL"><svg class="ring" viewBox="0 0 100 100" aria-hidden="true"><defs><path id="r2" d="M50,50 m-38,0 a38,38 0 1,1 76,0 a38,38 0 1,1 -76,0"/></defs><text><textPath href="#r2">EXPECTED LOSS · EXPECTED LOSS ·</textPath></text></svg><div class="core"><svg viewBox="0 0 100 100" aria-hidden="true"><path d="M50 88 C20 66 6 48 6 30 C6 16 17 6 30 6 C39 6 46 11 50 18 C54 11 61 6 70 6 C83 6 94 16 94 30 C94 48 80 66 50 88Z" fill="#EE2B2B"/><path d="M24 18 C18 20 14 26 14 32" stroke="rgba(255,255,255,.55)" stroke-width="5" fill="none" stroke-linecap="round"/></svg><b id="vL">–</b></div></div>
+          <div class="badge" id="bU"><svg class="ring" viewBox="0 0 100 100" aria-hidden="true"><defs><path id="r3" d="M50,50 m-38,0 a38,38 0 1,1 76,0 a38,38 0 1,1 -76,0"/></defs><text><textPath href="#r3">MEDIAN LIFT · MEDIAN LIFT ·</textPath></text></svg><div class="core"><svg viewBox="0 0 100 100" aria-hidden="true"><path d="M50 88 C20 66 6 48 6 30 C6 16 17 6 30 6 C39 6 46 11 50 18 C54 11 61 6 70 6 C83 6 94 16 94 30 C94 48 80 66 50 88Z" fill="#EE2B2B"/><path d="M24 18 C18 20 14 26 14 32" stroke="rgba(255,255,255,.55)" stroke-width="5" fill="none" stroke-linecap="round"/></svg><b id="vU">–</b></div></div>
+          <div class="badge" id="bD"><svg class="ring" viewBox="0 0 100 100" aria-hidden="true"><defs><path id="r4" d="M50,50 m-38,0 a38,38 0 1,1 76,0 a38,38 0 1,1 -76,0"/></defs><text><textPath href="#r4">DAYS RUNNING · DAYS RUNNING ·</textPath></text></svg><div class="core"><svg viewBox="0 0 100 100" aria-hidden="true"><path d="M50 88 C20 66 6 48 6 30 C6 16 17 6 30 6 C39 6 46 11 50 18 C54 11 61 6 70 6 C83 6 94 16 94 30 C94 48 80 66 50 88Z" fill="#EE2B2B"/><path d="M24 18 C18 20 14 26 14 32" stroke="rgba(255,255,255,.55)" stroke-width="5" fill="none" stroke-linecap="round"/></svg><b id="vD">0</b></div></div>
+        </div>
+
+        <div class="verdict" id="verdict" aria-live="polite"><span id="vText">Keep testing</span><small id="vWhy">Run a few days of traffic to start building evidence.</small></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="scallop flip" role="presentation"></div>
+
+<!-- ================= 3. MEMO ================= -->
+<section class="sec" aria-labelledby="s3">
+  <div class="sec-head"><span class="num">03</span><h2 id="s3">The director memo</h2>
+    <p>Written live from the simulation above. Change the scenario and the memo rewrites itself, because a good memo states the evidence it's standing on.</p></div>
+  <article class="memo">
+    <div class="memo-head"><h3>Launch decision: answer re-ranking</h3><span class="mono" id="memoStamp" style="font-size:12px"></span></div>
+    <dl>
+      <dt>Decision</dt><dd id="mDecision"></dd>
+      <dt>Evidence</dt><dd id="mEvidence"></dd>
+      <dt>Why this rule</dt><dd>We ship when B is very likely better <b>and</b> the cost of being wrong is small. A significance test only answers "is there any difference?" Expected loss answers the question leadership asks: <span class="serif">"if we're wrong, how much does it hurt?"</span></dd>
+      <dt>Risks</dt><dd><ul class="tight">
+        <li><b>Novelty effect:</b> users may click a fresh ranking more at first. Compare week 1 and week 2 lift before calling it.</li>
+        <li><b>Segment mix:</b> analysts and business users may react differently. Check the lift holds in both before full rollout.</li>
+        <li><b>Governance:</b> boosting "popular" tables must never surface restricted data. Permission checks happen before ranking, and an audit query backs it up.</li>
+      </ul></dd>
+      <dt>Rollout</dt><dd>5% of workspaces → 25% → 100%, with a kill switch if any guardrail breaches for 2 consecutive days. The posterior from this test becomes the prior for the next stage, so evidence carries forward.</dd>
+      <dt>Next step</dt><dd id="mNext"></dd>
+    </dl>
+  </article>
+</section>
+
+<!-- ================= 4. CONCEPT FROM CLASS ================= -->
+<section class="sec" aria-labelledby="s4">
+  <div class="sec-head"><span class="num">04</span><h2 id="s4">The math, from my Monte Carlo course</h2>
+    <p>Two ideas from UCLA Stats 102C carry this whole room. Explained in my own words with a product example.</p></div>
+  <div class="grid2">
+    <article class="card chrome pinkc">
+      <span class="kicker">Bayesian updating · conjugate priors</span>
+      <h3>Beliefs as a Beta distribution</h3>
+      <p>Treat each arm's true acceptance rate as uncertain and describe it with a Beta(a, b) curve. Think of <b>a</b> as "acceptances we've effectively seen" and <b>b</b> as "misses we've seen". When <span class="mono">k</span> of <span class="mono">n</span> new questions are accepted, the update is just addition:</p>
+      <p class="mono" style="font-size:15px;background:rgba(255,255,255,.6);border-radius:12px;padding:10px 12px">Beta(a, b) → Beta(a + k, b + n − k)</p>
+      <p>The prior is how much past launches should count. A strong prior needs more data to move, which protects against getting excited about one lucky day.</p>
+    </article>
+    <article class="card cream">
+      <span class="kicker">Monte Carlo · estimate by simulation</span>
+      <h3>Turning curves into decisions</h3>
+      <p>"Chance B beats A" has no tidy formula. So we draw 20,000 plausible worlds: sample a rate for A, sample one for B, and record who won and by how much. Averages over those worlds give us:</p>
+      <ul class="tight">
+        <li><b>P(B &gt; A)</b>: the share of worlds where B wins.</li>
+        <li><b>Expected loss</b>: the average shortfall in worlds where B actually loses. That's the price of shipping a mistake.</li>
+      </ul>
+      <p>More draws make these numbers steadier. Error shrinks with the square root of the number of draws.</p>
+    </article>
+  </div>
+</section>
+
+<!-- ================= 5. SQL + PYTHON ================= -->
+<section class="sec" aria-labelledby="s5">
+  <div class="sec-head"><span class="num">05</span><h2 id="s5">How I'd run it on real logs</h2>
+    <p>The same analysis against an event table in a lakehouse. The table and columns are illustrative.</p></div>
+  <div class="grid2">
+    <pre><code><span class="c">-- Daily acceptance by arm (SQL)</span>
+<span class="k">SELECT</span>
+  experiment_arm,
+  <span class="k">COUNT</span>(*)                                  <span class="k">AS</span> questions,
+  <span class="k">SUM</span>(<span class="k">CASE WHEN</span> accepted <span class="k">THEN</span> 1 <span class="k">ELSE</span> 0 <span class="k">END</span>) <span class="k">AS</span> accepted,
+  <span class="k">PERCENTILE</span>(latency_ms, 0.95)              <span class="k">AS</span> p95_latency_ms
+<span class="k">FROM</span> analytics.assistant_answer_events
+<span class="k">WHERE</span> experiment_id = <span class="s">'answer_rerank_v2'</span>
+  <span class="k">AND</span> event_date &gt;= <span class="s">'2026-10-01'</span>
+<span class="k">GROUP BY</span> experiment_arm;</code></pre>
+    <pre><code><span class="c"># Decision rule (Python)</span>
+<span class="k">import</span> numpy <span class="k">as</span> np
+rng = np.random.default_rng(<span class="s">102</span>)
+a0, b0 = <span class="s">42</span>, <span class="s">58</span>              <span class="c"># prior from past launches</span>
+A = rng.beta(a0 + kA, b0 + nA - kA, <span class="s">20_000</span>)
+B = rng.beta(a0 + kB, b0 + nB - kB, <span class="s">20_000</span>)
+p_b_wins = (B &gt; A).mean()
+exp_loss = np.maximum(A - B, <span class="s">0</span>).mean()
+ship = p_b_wins &gt; <span class="s">0.95</span> <span class="k">and</span> exp_loss &lt; <span class="s">0.002</span></code></pre>
+  </div>
+</section>
+
+<footer class="foot">
+  <span>Unofficial concept prototype by Shriya Shekatkar, built to practice product decision-making. All traffic is simulated. Not affiliated with any company.</span>
+  <span class="serif">ship the bet, not the guess ♡</span>
+</footer>
+</div>
+
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+
+  /* ---------- seeded RNG + samplers ---------- */
+  function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
+  let rng = mulberry32(102);
+  const mc = mulberry32(2026);
+  function rnorm(r){const u=r()||1e-12,v=r();return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v);}
+  function rgamma(r,k){if(k<1)return rgamma(r,k+1)*Math.pow(r()||1e-12,1/k);const d=k-1/3,c=1/Math.sqrt(9*d);
+    for(;;){let x,v;do{x=rnorm(r);v=1+c*x;}while(v<=0);v=v*v*v;const u=r();if(Math.log(u)<.5*x*x+d-d*v+d*Math.log(v))return d*v;}}
+  const rbeta=(r,a,b)=>{const x=rgamma(r,a),y=rgamma(r,b);return x/(x+y);};
+  function lgamma(z){const c=[0.99999999999980993,676.5203681218851,-1259.1392167224028,771.32342877765313,-176.61502916214059,12.507343278686905,-0.13857109526572012,9.9843695780195716e-6,1.5056327351493116e-7];
+    if(z<.5)return Math.log(Math.PI/Math.sin(Math.PI*z))-lgamma(1-z);z-=1;let x=c[0];for(let i=1;i<9;i++)x+=c[i]/(z+i);const t=z+7.5;return .5*Math.log(2*Math.PI)+(z+.5)*Math.log(t)-t+Math.log(x);}
+  const ldbeta=(x,a,b)=>lgamma(a+b)-lgamma(a)-lgamma(b)+(a-1)*Math.log(x)+(b-1)*Math.log(1-x);
+
+  /* ---------- state ---------- */
+  const SCEN={win:[.42,.45],tiny:[.42,.425],flat:[.42,.42],lose:[.42,.40]};
+  const PRIORS={hist:[42,58],flat:[1,1],skeptic:[210,290]};
+  let S;
+  function reset(){rng=mulberry32(102);S={day:0,nA:0,kA:0,nB:0,kB:0,dots:[],p:null};updateStats(true);term('<span class="dim">$</span> launch-room reset · waiting for traffic');}
+  function prior(){return PRIORS[$('prior').value];}
+  function truth(){return SCEN[$('scen').value];}
+
+  function runDays(d){
+    const vol=+$('vol').value,[pA,pB]=truth();
+    for(let i=0;i<d;i++){
+      let kA=0,kB=0;for(let j=0;j<vol;j++){if(rng()<pA)kA++;if(rng()<pB)kB++;}
+      S.nA+=vol;S.kA+=kA;S.nB+=vol;S.kB+=kB;S.day++;
+    }
+    spawn(Math.min(160,40*d));updateStats(false);
+    term(`<span class="dim">$</span> day ${S.day} · A ${S.kA.toLocaleString()}/${S.nA.toLocaleString()} · B ${S.kB.toLocaleString()}/${S.nB.toLocaleString()} accepted`);
+  }
+
+  /* ---------- Monte Carlo summary ---------- */
+  function summarize(){
+    const [a0,b0]=prior();const N=20000;const aA=a0+S.kA,bA=b0+S.nA-S.kA,aB=a0+S.kB,bB=b0+S.nB-S.kB;
+    const lifts=new Float64Array(N);let win=0,loss=0;
+    for(let i=0;i<N;i++){const A=rbeta(mc,aA,bA),B=rbeta(mc,aB,bB);const d=B-A;lifts[i]=d;if(d>0)win++;else loss+=-d;}
+    const sorted=Array.from(lifts).sort((x,y)=>x-y);
+    return{aA,bA,aB,bB,p:win/N,el:loss/N,med:sorted[N>>1],lo:sorted[Math.floor(N*.05)],hi:sorted[Math.floor(N*.95)],lifts};
+  }
+
+  function setBadge(id,val,bid){const el=$(id);if(el.textContent!==val){el.textContent=val;const b=$(bid);if(!reduce){b.classList.remove('spin');void b.offsetWidth;b.classList.add('spin');}}}
+
+  function updateStats(fresh){
+    $('volo').textContent=(+$('vol').value).toLocaleString();
+    $('losso').textContent=(+$('loss').value).toFixed(2)+' pts';
+    const s=summarize();S.p=s;
+    setBadge('vP',(s.p*100).toFixed(1)+'%','bP');
+    setBadge('vL',(s.el*100).toFixed(2)+' pt','bL');
+    setBadge('vU',(s.med>=0?'+':'')+(s.med*100).toFixed(2),'bU');
+    setBadge('vD',String(S.day),'bD');
+    const thr=+$('loss').value/100;
+    const v=$('verdict'),vt=$('vText'),vw=$('vWhy');v.classList.remove('ship','skip');
+    let decision,next;
+    if(S.day===0){vt.textContent='Keep testing';vw.textContent='Run a few days of traffic to start building evidence.';decision='No decision yet. The test has not started.';next='Start the test at 50/50 on a 5% slice of workspaces.';}
+    else if(s.p>.95&&s.el<thr){v.classList.add('ship');vt.textContent='Ship it';vw.textContent=`B wins in ${(s.p*100).toFixed(1)}% of simulated worlds and the expected cost of being wrong (${(s.el*100).toFixed(2)} pts) is under the ${(thr*100).toFixed(2)}-pt limit.`;
+      decision='<b>Ship variant B</b> to the next rollout stage.';next='Move to 25% of workspaces, confirm guardrails hold for 7 days, check the lift in analyst and business-user segments separately, then go to 100%.';}
+    else if(s.p<.05||(s.el>thr*3&&S.day>=7&&s.p<.5)){v.classList.add('skip');vt.textContent='Skip it';vw.textContent=`B wins in only ${(s.p*100).toFixed(1)}% of simulated worlds. The re-ranking is not paying for its extra latency and cost.`;
+      decision='<b>Do not ship.</b> Roll back variant B.';next='Run a short debrief: which question types got worse? Feed that into the next ranking hypothesis rather than tuning this one blindly.';}
+    else{vt.textContent='Keep testing';vw.textContent=`B wins in ${(s.p*100).toFixed(1)}% of worlds, but the expected loss (${(s.el*100).toFixed(2)} pts) is still above the limit. More data will shrink it.`;
+      decision='<b>Keep the test running.</b> The evidence is promising but not decisive.';next=S.day>=14?'The effect is probably too small to matter. Decide whether a +0.5-pt lift is worth the extra compute, or stop and redirect the team.':'Continue for another week, and check that daily lift is stable rather than fading (novelty effect).';}
+    $('mDecision').innerHTML=decision;
+    $('mEvidence').innerHTML=S.day===0?'None yet.':`${S.day} day(s), ${(S.nA+S.nB).toLocaleString()} questions. Observed acceptance: A ${(S.kA/S.nA*100).toFixed(1)}%, B ${(S.kB/S.nB*100).toFixed(1)}%. Median lift ${(s.med*100).toFixed(2)} pts (90% credible range ${(s.lo*100).toFixed(2)} to ${(s.hi*100).toFixed(2)}). P(B beats A) ${(s.p*100).toFixed(1)}%. Expected loss if we ship: ${(s.el*100).toFixed(2)} pts.`;
+    $('mNext').innerHTML=next;
+    $('memoStamp').textContent='Prior: '+$('prior').selectedOptions[0].text.split(':')[0]+' · Day '+S.day;
+    drawPost(s);drawLift(s);
+  }
+
+  /* ---------- canvases ---------- */
+  function setup(c){const r=c.getBoundingClientRect(),d=window.devicePixelRatio||1;c.width=Math.max(1,Math.round(r.width*d));c.height=Math.max(1,Math.round(r.height*d));const x=c.getContext('2d');x.setTransform(d,0,0,d,0,0);return{x,w:r.width,h:r.height};}
+
+  function drawPost(s){
+    const {x,w,h}=setup($('post'));const L=10,R=10,T=12,B=26;
+    const [a0,b0]=prior();
+    const mA=s.aA/(s.aA+s.bA),mB=s.aB/(s.aB+s.bB);
+    const sd=Math.sqrt(mA*(1-mA)/(s.aA+s.bA+1));
+    let lo=Math.max(.001,Math.min(mA,mB)-Math.max(.06,6*sd)),hi=Math.min(.999,Math.max(mA,mB)+Math.max(.06,6*sd));
+    const X=t=>L+(t-lo)/(hi-lo)*(w-L-R);
+    const N=300,xs=[],dA=[],dB=[],dP=[];let mx=0;
+    for(let i=0;i<=N;i++){const t=lo+(hi-lo)*i/N;xs.push(t);const a=Math.exp(ldbeta(t,s.aA,s.bA)),b=Math.exp(ldbeta(t,s.aB,s.bB)),p=Math.exp(ldbeta(t,a0,b0));dA.push(a);dB.push(b);dP.push(p);mx=Math.max(mx,a,b);}
+    const Y=v=>T+(1-Math.min(v,mx*1.05)/(mx*1.05))*(h-T-B);
+    x.strokeStyle='rgba(124,247,200,.12)';x.lineWidth=1;x.font='10px "JetBrains Mono", monospace';x.fillStyle='#8C86A3';x.textAlign='center';x.textBaseline='top';
+    const step=(hi-lo)>.3?.1:(hi-lo)>.12?.02:.01;
+    for(let t=Math.ceil(lo/step)*step;t<=hi;t+=step){x.beginPath();x.moveTo(X(t),T);x.lineTo(X(t),h-B);x.stroke();x.fillText((t*100).toFixed(0)+'%',X(t),h-B+6);}
+    const line=(arr,col,fill,dash)=>{x.beginPath();arr.forEach((v,i)=>{const px=X(xs[i]),py=Y(v);i?x.lineTo(px,py):x.moveTo(px,py);});
+      if(fill){x.lineTo(X(xs[N]),Y(0));x.lineTo(X(xs[0]),Y(0));x.closePath();x.fillStyle=fill;x.fill();}
+      else{x.setLineDash(dash||[]);x.strokeStyle=col;x.lineWidth=2;x.stroke();x.setLineDash([]);}};
+    line(dP,'#FFB547',null,[4,5]);
+    line(dA,null,'rgba(154,163,184,.25)');line(dA,'#9AA3B8');
+    line(dB,null,'rgba(226,18,122,.28)');line(dB,'#E2127A');
+  }
+
+  function drawLift(s){
+    const {x,w,h}=setup($('lift'));const L=10,R=10,T=10,B=24;
+    const arr=s.lifts;let lo=Infinity,hi=-Infinity;for(const v of arr){if(v<lo)lo=v;if(v>hi)hi=v;}
+    const pad=Math.max(.002,(hi-lo)*.08);lo=Math.min(lo-pad,-.005);hi=Math.max(hi+pad,.005);
+    const bins=46,bw=(hi-lo)/bins,c=new Array(bins).fill(0);for(const v of arr){c[Math.min(bins-1,Math.floor((v-lo)/bw))]++;}
+    const mx=Math.max(...c);const X=t=>L+(t-lo)/(hi-lo)*(w-L-R),Y=v=>T+(1-v/mx)*(h-T-B);
+    for(let i=0;i<bins;i++){const x0=lo+i*bw;x.fillStyle=x0+bw/2>0?'rgba(226,18,122,.85)':'rgba(154,163,184,.55)';
+      const px=X(x0)+1,pw=Math.max(1,X(x0+bw)-X(x0)-2);x.fillRect(px,Y(c[i]),pw,Y(0)-Y(c[i]));}
+    x.strokeStyle='#7CF7C8';x.lineWidth=2;x.setLineDash([3,4]);x.beginPath();x.moveTo(X(0),T);x.lineTo(X(0),h-B);x.stroke();x.setLineDash([]);
+    x.font='10px "JetBrains Mono", monospace';x.fillStyle='#8C86A3';x.textBaseline='top';
+    x.textAlign='left';x.fillText((lo*100).toFixed(1)+' pts',L,h-B+6);x.textAlign='right';x.fillText((hi*100).toFixed(1)+' pts',w-R,h-B+6);
+    x.textAlign='left';x.fillStyle='#7CF7C8';x.fillText(' 0 = no change',X(0)+4,T);
+  }
+
+  /* traffic lanes: particles */
+  const lanesCv=$('lanes');let LW=0,LH=0,lctx=null;
+  function sizeLanes(){const o=setup(lanesCv);lctx=o.x;LW=o.w;LH=o.h;}
+  function spawn(n){const [pA,pB]=truth();for(let i=0;i<n;i++){const arm=i%2;const ok=rng()<(arm?pB:pA);
+    S.dots.push({x:-10-Math.random()*LW*.6,y:(arm?.72:.28)*LH+(Math.random()-.5)*LH*.26,v:1.4+Math.random()*2.2,arm,ok,r:2+Math.random()*1.6});}
+    if(reduce){S.dots.forEach(d=>d.x=Math.random()*LW);} }
+  function frame(){
+    if(!lctx)return;lctx.clearRect(0,0,LW,LH);
+    lctx.font='600 11px "JetBrains Mono", monospace';lctx.textBaseline='middle';
+    [['A · CONTROL',.28,'#9AA3B8'],['B · RE-RANKED',.72,'#E2127A']].forEach(([t,y,c])=>{lctx.fillStyle='rgba(255,255,255,.03)';lctx.fillRect(0,y*LH-LH*.16,LW,LH*.32);lctx.fillStyle=c;lctx.fillText(t,10,y*LH-LH*.16+12);});
+    const gx=LW*.78;lctx.strokeStyle='rgba(124,247,200,.35)';lctx.setLineDash([2,6]);lctx.beginPath();lctx.moveTo(gx,6);lctx.lineTo(gx,LH-6);lctx.stroke();lctx.setLineDash([]);
+    lctx.fillStyle='#7CF7C8';lctx.textAlign='right';lctx.fillText('ANSWER SHOWN',LW-10,12);lctx.textAlign='left';
+    S.dots=S.dots.filter(d=>d.x<LW+20);
+    for(const d of S.dots){if(!reduce)d.x+=d.v;const past=d.x>gx;
+      if(past&&d.ok){lctx.shadowColor='#E2127A';lctx.shadowBlur=10;lctx.fillStyle='#FF4FA3';}else{lctx.shadowBlur=0;lctx.fillStyle=past?'#3A3550':'#CFCADF';}
+      lctx.beginPath();lctx.arc(d.x,d.y,d.r,0,7);lctx.fill();}
+    lctx.shadowBlur=0;
+    if(!reduce)requestAnimationFrame(frame);
+  }
+
+  function term(html){$('term').innerHTML=html;}
+
+  /* ---------- wire up ---------- */
+  $('day').onclick=()=>runDays(1);
+  $('week').onclick=()=>runDays(7);
+  $('reset').onclick=()=>{reset();};
+  ['scen','prior','vol'].forEach(id=>$(id).addEventListener('change',()=>{reset();}));
+  $('vol').addEventListener('input',()=>{$('volo').textContent=(+$('vol').value).toLocaleString();});
+  $('loss').addEventListener('input',()=>updateStats(false));
+
+  sizeLanes();reset();spawn(60);
+  runDays(3);
+  requestAnimationFrame(frame);
+  if(reduce)frame();
+  let t;addEventListener('resize',()=>{clearTimeout(t);t=setTimeout(()=>{sizeLanes();updateStats(false);if(reduce)frame();},120);});
+  if(document.fonts&&document.fonts.ready)document.fonts.ready.then(()=>{updateStats(false);});
+})();
+</script>
+</body>
+</html>
